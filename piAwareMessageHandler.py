@@ -2,7 +2,6 @@
 piAwareMessageHandler allows messaging to any onboarded IoT core endpoint with configurable command line calls or default values assigned by config/piAwareIOTConfig.ini
 The logic used below is derived from AWS IoT SDK with customized logic for this implementation, see here>>https://github.com/aws/aws-iot-device-sdk-python-v2/tree/main/samples
 """
-
 import logging
 from awscrt import io, mqtt, auth, http
 from awsiot import mqtt_connection_builder
@@ -81,8 +80,7 @@ def handleResubscription(resubscribe_future):
 
 # Callback when the subscribed topic receives a message
 def handleMessage(topic, payload, dup, qos, retain, **kwargs):
-    logging.info("Received message from topic '{}'".format(topic))
-    print("Received message from topic '{}'".format(topic)) #TODO: Remove this line once testing is complete
+    handleLoggingRequest("Message send success for topic '{}'".format(topic), logging.info)
     global received_count
     received_count += 1
     if received_count == args.count:
@@ -160,22 +158,35 @@ def main():
     # This step loops forever if count was set to 0.
     if args.message:
         print()
+        if(args.uploadInterval<20): sleep_time = 20
+        else: sleep_time = args.uploadInterval
         if args.count == 0:
-            handleLoggingRequest("Message transmission started.  Messages will be sent every {} seconds".format(args.uploadInterval), logging.info)
+            handleLoggingRequest("Message transmission started.  Messages will be sent every {} seconds".format(sleep_time), logging.info)
         else:
             handleLoggingRequest("Manual override by client.  Only sending {} message(s)".format(args.count), logging.info)
 
         publish_count = 1
         while (publish_count <= args.count) or (args.count == 0):
             with open(args.dataPath) as aircraftDataFile:    
-                aircraftMessage = json.load(aircraftDataFile)
+                aircraftMessageFromFile = json.load(aircraftDataFile)
+                aircraftRecords = aircraftMessageFromFile["aircraft"]
+                aircraftMessageParsed = []
+                for record in aircraftRecords:
+                    try: 
+                        aircraftMessageParsed.append({'flight':record['flight'], 'altitude':record['alt_geom'],'track':record['track'],'lat':record['lat'],'long':record['lon']})
+                    except Exception as e: 
+                        pass
+                aircraftMessage = json.dumps(aircraftMessageParsed)
             message = "{} [{}]".format(aircraftMessage, publish_count)
             handleLoggingRequest("Publishing message to topic '{}'".format(args.topic), logging.info)
             mqtt_connection.publish(
                 topic=args.topic,
                 payload=message,
                 qos=mqtt.QoS.AT_LEAST_ONCE)
-            time.sleep(args.uploadInterval)
+            
+            #disallow any intervals less than 20 seconds for spend purposes
+            time.sleep(sleep_time)
+
             publish_count += 1
 
     # Wait for all messages to be received.
